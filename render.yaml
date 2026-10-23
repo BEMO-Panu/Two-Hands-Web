@@ -1,0 +1,27 @@
+# Use when the GitHub repository root is the contents of two-hands/.
+# For the Agent Office monorepo, set rootDir: two-hands below.
+services:
+  - type: web
+    name: two-hands
+    runtime: node
+    plan: free
+    buildCommand: npm run check
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: DATA_PROVIDER
+        value: supabase
+      - key: HOST
+        value: 0.0.0.0
+      - key: APP_ORIGIN
+        sync: false
+      - key: APP_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false

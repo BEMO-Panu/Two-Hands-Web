@@ -1,0 +1,18 @@
+{
+  "name": "two-hands",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "Two-Hands marketplace MVP with Supabase Auth, PostgreSQL and Storage",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env scripts/serve.js",
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check dist/app.js && node --check server/app.js && node --check server/security.js && node --check server/supabase-app.js && node --check server/supabase-client.js && node --check scripts/serve.js && node --check dist/demo.js && node --check server/presentation-app.js && node --check dist/presentation-ui.js",
+    "admin": "node --env-file-if-exists=.env scripts/admin.js",
+    "backup": "node --env-file-if-exists=.env scripts/backup.js",
+    "preflight": "node --env-file-if-exists=.env scripts/preflight.js"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
