@@ -176,7 +176,7 @@ test('MFA login withholds cookies until challenge verification succeeds',async t
    const r=await fetch(base+'/api/auth/login',{method:'POST',headers,body:JSON.stringify({email:user.email,password:'long enough password',...(code?{code}:{})})});
    assert.ok([400,401].includes(r.status));assert.equal(r.headers.getSetCookie().length,0,'Failed MFA must never issue an authentication cookie');
    assert.ok(calls.some(c=>c.url.includes('/logout')),'Temporary password-only session is revoked');
-   assert.ok(!calls.some(c=>c.url.includes('/rest/v1/')));
+   const policyReads=calls.filter(c=>c.url.includes('/rest/v1/'));assert.equal(policyReads.length,1);assert.equal(JSON.parse(policyReads[0].init.body).action,'auth_policy');assert.equal(policyReads[0].init.headers.Authorization,'Bearer aal1-access');
   }
   calls.length=0;
   const r=await fetch(base+'/api/auth/login',{method:'POST',headers,body:JSON.stringify({email:user.email,password:'long enough password',code:'123456'})});
@@ -184,7 +184,7 @@ test('MFA login withholds cookies until challenge verification succeeds',async t
   const challenge=calls.findIndex(c=>c.url.endsWith(`/factors/${factor}/challenge`));const verify=calls.findIndex(c=>c.url.endsWith(`/factors/${factor}/verify`));
   assert.ok(challenge>=0&&verify>challenge);assert.deepEqual(JSON.parse(calls[verify].init.body),{challenge_id:'challenge-id',code:'123456'});
   assert.equal(calls[challenge].init.headers.Authorization,'Bearer aal1-access');assert.equal(calls[verify].init.headers.Authorization,'Bearer aal1-access');
-  const authenticatedState=calls.find(c=>c.url.includes('/rest/v1/'));assert.equal(authenticatedState.init.headers.Authorization,'Bearer aal2-access');
+  const authenticatedState=calls.find(c=>c.url.includes('/rest/v1/')&&JSON.parse(c.init.body).action==='snapshot');assert.equal(authenticatedState.init.headers.Authorization,'Bearer aal2-access');
  });
 });
 
