@@ -37,8 +37,18 @@ export function createSupabaseApplication({url,publishableKey,origin='http://loc
  function limit(key,count,ms){const now=clock();let b=limits.get(key);if(!b||b.end<=now){if(limits.size>=10000){for(const [k,v] of limits)if(v.end<=now)limits.delete(k);if(limits.size>=10000)fail(503,'เซิร์ฟเวอร์กำลังมีงานมาก');}b={n:0,end:now+ms};limits.set(key,b);}if(++b.n>count)fail(429,'ทำรายการบ่อยเกินไป กรุณาลองใหม่ภายหลัง');}
  const empty={products:[],stores:[],profile:{},verification:{status:'none'},bids:{},favorites:[],cart:[],orders:[]};
  const extras=s=>({provider:'supabase',capabilities:{payments:false,shipping:false,mfa:true,pickupWorkflow:false,presentationDemo:!!presentationHandler},production,csrf:s.csrf,categories,images,serverTime:clock(),recoveryRequired:!!s.recovery});
- async function state(s,user){const data=await sb.rpc('snapshot',{},s.recovery?undefined:s.access);return {...empty,...data,...extras(s),capabilities:{...extras(s).capabilities,pickupWorkflow:data.pickupWorkflow===true,orderPayments:data.orderPayments===true,sampleCommerce:data.sampleCommerce===true,sampleAuctions:data.sampleAuctions===true,adminMfaRequired:data.adminMfaRequired!==false},serverTime:Number.isFinite(Number(data.serverTime))?Number(data.serverTime):clock(),user:user&&!s.recovery?{id:user.id,email:user.email,name:data.user?.name||user.user_metadata?.name||'สมาชิก',role:data.user?.role||'user',emailVerified:!!user.email_confirmed_at,mfaEnabled:!!user.factors?.some(f=>f.factor_type==='totp'&&f.status==='verified')}:null};}
+ async function state(s,user){const data=await sb.rpc('snapshot',{},s.recovery?undefined:s.access);return {...empty,...data,...extras(s),capabilities:{...extras(s).capabilities,pickupWorkflow:data.pickupWorkflow===true,orderPayments:data.orderPayments===true,sampleCommerce:data.sampleCommerce===true,sampleAuctions:data.sampleAuctions===true,adminMfaRequired:data.adminMfaRequired!==false,shipping:data.shipping===true,sellerProfiles:data.sellerProfiles===true},serverTime:Number.isFinite(Number(data.serverTime))?Number(data.serverTime):clock(),user:user&&!s.recovery?{id:user.id,email:user.email,name:data.user?.name||user.user_metadata?.name||'สมาชิก',role:data.user?.role||'user',emailVerified:!!user.email_confirmed_at,mfaEnabled:!!user.factors?.some(f=>f.factor_type==='totp'&&f.status==='verified')}:null};}
  async function read(req,binary=false){let n=0,chunks=[];const max=binary?2*1024*1024:65536;for await(const c of req){n+=c.length;if(n>max)fail(413,'ไฟล์หรือข้อมูลใหญ่เกินกำหนด');chunks.push(c);}const b=Buffer.concat(chunks);if(binary)return b;if(!String(req.headers['content-type']||'').toLowerCase().startsWith('application/json'))fail(415,'ต้องส่งข้อมูลแบบ JSON');try{const data=JSON.parse(b.toString());if(!data||Array.isArray(data)||typeof data!=='object')throw Error();return data;}catch{fail(400,'JSON ไม่ถูกต้อง');}}
+ function deliveryInput(b){
+  const delivery=choice(b.delivery,['pickup','shipping'],'วิธีรับสินค้า');
+  if(delivery==='pickup'){
+   if(['recipientName','phone','address'].some(k=>b[k]!=null&&b[k]!==''))fail(400,'นัดรับไม่ต้องส่งชื่อ เบอร์โทร หรือที่อยู่จัดส่ง');
+   return {delivery,recipientName:null,phone:null,address:null};
+  }
+  const recipientName=string(b.recipientName,'ชื่อผู้รับ',{min:1,max:100}),phone=string(b.phone,'เบอร์โทร',{min:6,max:30}),address=string(b.address,'ที่อยู่จัดส่ง',{min:10,max:1000});
+  if(!/^[+0-9() -]+$/.test(phone))fail(400,'เบอร์โทรไม่ถูกต้อง');
+  return {delivery,recipientName,phone,address};
+ }
  function json(res,data,status=200){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));}
  const server=createServer({requestTimeout:30000,headersTimeout:10000,maxHeaderSize:16384},async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://images.unsplash.com blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");if(production)res.setHeader('Strict-Transport-Security','max-age=31536000');
@@ -112,8 +122,24 @@ export function createSupabaseApplication({url,publishableKey,origin='http://loc
     const pickupRoute=/^\/api\/orders\/([^/]+)\/shops\/([^/]+)\/(messages|handoff|fulfill)$/.exec(route);
     const paymentRoute=/^\/api\/orders\/([^/]+)\/pay$/.exec(route);
     const sampleCompleteRoute=/^\/api\/orders\/([^/]+)\/complete-sample$/.exec(route);
+    const deliveryRoute=/^\/api\/orders\/([^/]+)\/delivery$/.exec(route);
+    const shipmentRoute=/^\/api\/orders\/([^/]+)\/shops\/([^/]+)\/ship$/.exec(route);
     const listingRoute=/^\/api\/products\/([^/]+)(\/withdraw)?$/.exec(route);
-    if(sampleCompleteRoute){
+    if(deliveryRoute){
+     if(req.method!=='POST')fail(405,'วิธีทำรายการไม่ถูกต้อง');
+     if(!uuid.test(deliveryRoute[1]))fail(400,'รหัสคำสั่งซื้อไม่ถูกต้อง');
+     const b=await read(req);if(Object.keys(b).some(k=>!['delivery','recipientName','phone','address'].includes(k)))fail(400,'ข้อมูลรับสินค้าไม่ถูกต้อง');
+     action='order_delivery';payload={orderId:deliveryRoute[1],...deliveryInput(b)};
+     limit('order_delivery:'+user.id,30,60000);
+    }else if(shipmentRoute){
+     if(req.method!=='POST')fail(405,'วิธีทำรายการไม่ถูกต้อง');
+     if(!uuid.test(shipmentRoute[1])||!uuid.test(shipmentRoute[2]))fail(400,'รหัสคำสั่งซื้อหรือร้านค้าไม่ถูกต้อง');
+     const b=await read(req);if(Object.keys(b).some(k=>!['carrier','trackingNumber'].includes(k)))fail(400,'ข้อมูลพัสดุไม่ถูกต้อง');
+     const carrier=string(b.carrier,'ผู้จัดส่ง',{min:1,max:80}),trackingNumber=string(b.trackingNumber,'เลขติดตาม',{min:3,max:100});
+     if(!/^[A-Za-z0-9_-]+$/.test(trackingNumber))fail(400,'เลขติดตามไม่ถูกต้อง');
+     action='order_ship';payload={orderId:shipmentRoute[1],shopId:shipmentRoute[2],carrier,trackingNumber};
+     limit('order_ship:'+user.id,30,60000);
+    }else if(sampleCompleteRoute){
      if(req.method!=='POST')fail(405,'วิธีทำรายการไม่ถูกต้อง');
      if(!uuid.test(sampleCompleteRoute[1]))fail(400,'รหัสคำสั่งซื้อไม่ถูกต้อง');
      const b=await read(req);if(Object.keys(b).length)fail(400,'ไม่ต้องส่งข้อมูลเพิ่มเติมเพื่อยืนยันรับสินค้าตัวอย่าง');
@@ -175,7 +201,11 @@ export function createSupabaseApplication({url,publishableKey,origin='http://loc
      }
     }
     else if(/^\/api\/(favorites|cart)\/[^/]+$/.test(route)&&['PUT','DELETE'].includes(req.method)){const [, ,kind,productId]=route.split('/');if(kind==='cart'&&!uuid.test(productId)&&!/^p(?:[1-9]|1[0-6])$/.test(productId))fail(400,'รหัสสินค้าไม่ถูกต้อง');action=(kind==='favorites'?'favorite':'cart')+(req.method==='PUT'?'_add':'_remove');payload={productId};}
-    else if(route==='/api/orders'&&req.method==='POST'){action='reserve';payload=await read(req);if(payload.delivery!=='pickup')fail(400,'MVP เปิดเฉพาะนัดรับ ยังไม่เปิดจัดส่งหรือชำระเงิน');if(!Array.isArray(payload.productIds)||payload.productIds.length<1||payload.productIds.length>20||payload.productIds.some(id=>typeof id!=='string'||(!uuid.test(id)&&!/^p(?:[1-9]|1[0-6])$/.test(id))))fail(400,'เลือกสินค้า 1 ถึง 20 รายการด้วยรหัสสินค้าที่ถูกต้อง');}
+    else if(route==='/api/orders'&&req.method==='POST'){
+     const b=await read(req);if(Object.keys(b).some(k=>!['productIds','delivery','recipientName','phone','address','requestKey'].includes(k)))fail(400,'ข้อมูลคำสั่งซื้อไม่ถูกต้อง ห้ามส่งยอดเงินหรือค่าจัดส่ง');
+     if(!Array.isArray(b.productIds)||b.productIds.length<1||b.productIds.length>20||b.productIds.some(id=>typeof id!=='string'||(!uuid.test(id)&&!/^p(?:[1-9]|1[0-6])$/.test(id))))fail(400,'เลือกสินค้า 1 ถึง 20 รายการด้วยรหัสสินค้าที่ถูกต้อง');
+     action='reserve';payload={productIds:b.productIds,requestKey:string(b.requestKey,'รหัสคำขอ',{min:10,max:100}),...deliveryInput(b)};
+    }
     else if(/^\/api\/orders\/[^/]+\/cancel$/.test(route)&&req.method==='POST'){action='cancel';payload={orderId:route.split('/')[3]};}
     else if(route==='/api/reports'&&req.method==='POST'){action='report';payload=await read(req);}
     if(!action)fail(404,'ไม่พบ API');
