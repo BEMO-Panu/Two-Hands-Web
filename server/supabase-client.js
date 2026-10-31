@@ -7,6 +7,7 @@ const rpcReasons={
  'Shop owner must verify email':{reason:'shop_email_unverified',message:'เจ้าของร้านต้องยืนยันอีเมลก่อน จึงจะอนุมัติร้านได้'}
 };
 const authReasons={
+ email_address_not_authorized:{reason:'email_not_authorized',message:'บริการอีเมลเริ่มต้นยังส่งถึงอีเมลนี้ไม่ได้ ผู้ดูแลต้องตั้งค่า SMTP ก่อนเปิดสมัครให้บุคคลทั่วไป'},
  email_not_confirmed:{reason:'email_not_confirmed',message:'บัญชีนี้ยังไม่ได้ยืนยันอีเมล กรุณาเปิดลิงก์ในอีเมลก่อนเข้าสู่ระบบ ไม่ต้องสมัครซ้ำ'},
  invalid_credentials:{reason:'invalid_credentials',message:'อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบแล้วลองใหม่'},
  over_email_send_rate_limit:{reason:'email_send_rate_limit',message:'บริการอีเมลยืนยันถึงโควตาแล้ว การกดซ้ำจะไม่ช่วย กรุณาติดต่อผู้ดูแลเพื่อตั้งค่าบริการอีเมลหรือวิธีสมัคร'},

@@ -6,7 +6,7 @@ const origin='http://localhost:4173';
 const config={url:'https://test.supabase.co',publishableKey:'sb_publishable_test',appKey:'ab'.repeat(32),origin};
 const response=(body,status=200,headers={})=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json',...headers}});
 test('Auth distinguishes known email quota, confirmation and credentials errors without leaking upstream details',async()=>{
- for(const [code,reason,status] of [['email_not_confirmed','email_not_confirmed',400],['invalid_credentials','invalid_credentials',400],['over_email_send_rate_limit','email_send_rate_limit',429]]){
+ for(const [code,reason,status] of [['email_address_not_authorized','email_not_authorized',400],['email_not_confirmed','email_not_confirmed',400],['invalid_credentials','invalid_credentials',400],['over_email_send_rate_limit','email_send_rate_limit',429]]){
   const sb=createSupabaseClient({...config,fetchImpl:async()=>response({code,message:'private upstream details'},status)});
   await assert.rejects(()=>sb.auth('/signup','POST',{}),e=>e.reason===reason&&!e.message.includes('private upstream details'));
  }
