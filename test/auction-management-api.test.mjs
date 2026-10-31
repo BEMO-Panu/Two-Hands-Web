@@ -55,3 +55,15 @@ test('Auction management capability defaults off until database migration is ins
   const r=await fetch(base+'/api/state',{headers});assert.equal((await r.json()).capabilities.auctionManagement,flag===true);
  },{snapshot:{auctionManagement:flag}});
 });
+
+test('Unified product deletion forwards only product id and rejects extra authority and forged CSRF',async()=>{
+ await fixture(async({base,headers,calls})=>{
+  const endpoint=base+'/api/products/'+product;
+  for(const body of [{force:true},{userId:uid}])assert.equal((await fetch(endpoint,{method:'DELETE',headers,body:JSON.stringify(body)})).status,400);
+  assert.equal((await fetch(endpoint,{method:'DELETE',headers:{...headers,'X-CSRF-Token':'fake'},body:'{}'})).status,403);
+  assert.equal((await fetch(base+'/api/products/p15',{method:'DELETE',headers,body:'{}'})).status,400);
+  assert.equal(calls.filter(c=>c.url.includes('/rest/v1/')).length,0);
+  const r=await fetch(endpoint,{method:'DELETE',headers,body:'{}'});assert.equal(r.status,200);
+  const request=calls.find(c=>c.url.includes('/rest/v1/'));assert.deepEqual(JSON.parse(request.init.body),{action:'product_delete',payload:{productId:product}});assert.equal(request.init.headers.Authorization,'Bearer payment-access');
+ });
+});

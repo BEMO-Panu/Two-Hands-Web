@@ -2,6 +2,8 @@
 import { HttpError } from './security.js';
 // Only exact, known business errors are translated; arbitrary upstream text stays private.
 const rpcReasons={
+ 'Own listing not found':{reason:'listing_owner_required',message:'ไม่พบประกาศของคุณ'},
+ 'Listing already has an order':{reason:'listing_has_order',message:'สินค้านี้มีคำสั่งซื้อแล้ว จึงลบประกาศไม่ได้ กรุณาจัดการผ่านรายการขาย'},
  'Own auction not found':{reason:'auction_owner_required',message:'ไม่พบประกาศประมูลของคุณ'},
  'Auction already has an order':{reason:'auction_has_order',message:'ประมูลนี้มีคำสั่งซื้อแล้ว จึงยกเลิกหรือลบประกาศไม่ได้ กรุณาจัดการผ่านรายการขาย'},
  'Auction already ended':{reason:'auction_ended',message:'ประมูลสิ้นสุดแล้ว กรุณาโหลดข้อมูลล่าสุด'},
