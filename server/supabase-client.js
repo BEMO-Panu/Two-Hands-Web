@@ -2,6 +2,10 @@
 import { HttpError } from './security.js';
 // Only exact, known business errors are translated; arbitrary upstream text stays private.
 const rpcReasons={
+ 'Own auction not found':{reason:'auction_owner_required',message:'ไม่พบประกาศประมูลของคุณ'},
+ 'Auction already has an order':{reason:'auction_has_order',message:'ประมูลนี้มีคำสั่งซื้อแล้ว จึงยกเลิกหรือลบประกาศไม่ได้ กรุณาจัดการผ่านรายการขาย'},
+ 'Auction already ended':{reason:'auction_ended',message:'ประมูลสิ้นสุดแล้ว กรุณาโหลดข้อมูลล่าสุด'},
+ 'Cancel auction before deleting':{reason:'auction_cancel_first',message:'กรุณายกเลิกประมูลก่อนลบประกาศที่มีผู้เสนอราคา'},
  'Cannot approve your own shop':{reason:'own_shop_review',message:'ไม่สามารถตรวจหรืออนุมัติร้านของตัวเองได้ ต้องให้ผู้ดูแลอีกบัญชีตรวจสอบ'},
  'Administrator with MFA required':{reason:'admin_mfa_required',message:'กรุณายืนยันตัวตนผู้ดูแลด้วยรหัสผ่านและรหัส 2FA อีกครั้งก่อนตรวจรายการ'},
  'Shop owner must verify email':{reason:'shop_email_unverified',message:'เจ้าของร้านต้องยืนยันอีเมลก่อน จึงจะอนุมัติร้านได้'}
@@ -28,7 +32,7 @@ export function createSupabaseClient({url,publishableKey,fetchImpl=fetch}) {
   const h={apikey:publishableKey,...headers};if(token)h.Authorization='Bearer '+token;
   if(body!==undefined&&!raw)h['Content-Type']='application/json';
   let response;try{response=await fetchImpl(url+route,{method,headers:h,body:body===undefined?undefined:raw?body:JSON.stringify(body),signal:AbortSignal.timeout(10000),redirect:'error'});}catch{throw new SupabaseError();}
-  if(!response.ok){let code='upstream_error',known;try{const data=await response.json();code=data.code||data.error_code||code;if(route.startsWith('/auth/v1/'))known=Object.hasOwn(authReasons,code)?authReasons[code]:undefined;if(route==='/rest/v1/rpc/th_api'&&response.status===403&&code==='PT403')known=Object.hasOwn(rpcReasons,data.message)?rpcReasons[data.message]:undefined;}catch{}
+  if(!response.ok){let code='upstream_error',known;try{const data=await response.json();code=data.code||data.error_code||code;if(route.startsWith('/auth/v1/'))known=Object.hasOwn(authReasons,code)?authReasons[code]:undefined;if(route==='/rest/v1/rpc/th_api'&&[400,403,404,409].includes(response.status)&&/^PT(400|403|404|409)$/.test(code))known=Object.hasOwn(rpcReasons,data.message)?rpcReasons[data.message]:undefined;}catch{}
    const status=response.status===429?429:response.status===401?401:response.status===403?403:response.status===404?404:response.status===409?409:response.status>=500?503:code==='23505'||code==='40001'||code==='40P01'?409:400;
    const error=new SupabaseError(status,code);if(known){error.message=known.message;error.reason=known.reason;}const retry=response.headers.get('retry-after');if(status===429&&retry&&/^\d+$/.test(retry)){error.retryAfter=Math.min(86400,Math.max(1,Number(retry)));if(code!=='over_email_send_rate_limit')error.message+=` (ลองอีกครั้งใน ${error.retryAfter} วินาที)`;}throw error;
   }

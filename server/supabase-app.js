@@ -37,7 +37,7 @@ export function createSupabaseApplication({url,publishableKey,origin='http://loc
  function limit(key,count,ms){const now=clock();let b=limits.get(key);if(!b||b.end<=now){if(limits.size>=10000){for(const [k,v] of limits)if(v.end<=now)limits.delete(k);if(limits.size>=10000)fail(503,'เซิร์ฟเวอร์กำลังมีงานมาก');}b={n:0,end:now+ms};limits.set(key,b);}if(++b.n>count){const retryAfter=Math.max(1,Math.ceil((b.end-now)/1000)),error=new HttpError(429,`ลองทำรายการนี้บ่อยเกินไป กรุณารอ ${retryAfter} วินาทีแล้วลองใหม่`);error.reason='local_rate_limit';error.retryAfter=retryAfter;throw error;}}
  const empty={products:[],stores:[],profile:{},verification:{status:'none'},bids:{},favorites:[],cart:[],orders:[]};
  const extras=s=>({provider:'supabase',capabilities:{payments:false,shipping:false,mfa:true,pickupWorkflow:false,presentationDemo:!!presentationHandler},production,csrf:s.csrf,categories,images,serverTime:clock(),recoveryRequired:!!s.recovery});
- async function state(s,user){const data=await sb.rpc('snapshot',{},s.recovery?undefined:s.access);return {...empty,...data,...extras(s),capabilities:{...extras(s).capabilities,pickupWorkflow:data.pickupWorkflow===true,orderPayments:data.orderPayments===true,sampleCommerce:data.sampleCommerce===true,sampleAuctions:data.sampleAuctions===true,adminMfaRequired:data.adminMfaRequired!==false,shipping:data.shipping===true,sellerProfiles:data.sellerProfiles===true},serverTime:Number.isFinite(Number(data.serverTime))?Number(data.serverTime):clock(),user:user&&!s.recovery?{id:user.id,email:user.email,name:data.user?.name||user.user_metadata?.name||'สมาชิก',role:data.user?.role||'user',emailVerified:!!user.email_confirmed_at,mfaEnabled:!!user.factors?.some(f=>f.factor_type==='totp'&&f.status==='verified')}:null};}
+ async function state(s,user){const data=await sb.rpc('snapshot',{},s.recovery?undefined:s.access);return {...empty,...data,...extras(s),capabilities:{...extras(s).capabilities,pickupWorkflow:data.pickupWorkflow===true,orderPayments:data.orderPayments===true,sampleCommerce:data.sampleCommerce===true,sampleAuctions:data.sampleAuctions===true,adminMfaRequired:data.adminMfaRequired!==false,shipping:data.shipping===true,sellerProfiles:data.sellerProfiles===true,auctionManagement:data.auctionManagement===true},serverTime:Number.isFinite(Number(data.serverTime))?Number(data.serverTime):clock(),user:user&&!s.recovery?{id:user.id,email:user.email,name:data.user?.name||user.user_metadata?.name||'สมาชิก',role:data.user?.role||'user',emailVerified:!!user.email_confirmed_at,mfaEnabled:!!user.factors?.some(f=>f.factor_type==='totp'&&f.status==='verified')}:null};}
  async function read(req,binary=false){let n=0,chunks=[];const max=binary?2*1024*1024:65536;for await(const c of req){n+=c.length;if(n>max)fail(413,'ไฟล์หรือข้อมูลใหญ่เกินกำหนด');chunks.push(c);}const b=Buffer.concat(chunks);if(binary)return b;if(!String(req.headers['content-type']||'').toLowerCase().startsWith('application/json'))fail(415,'ต้องส่งข้อมูลแบบ JSON');try{const data=JSON.parse(b.toString());if(!data||Array.isArray(data)||typeof data!=='object')throw Error();return data;}catch{fail(400,'JSON ไม่ถูกต้อง');}}
  function deliveryInput(b){
   const delivery=choice(b.delivery,['pickup','shipping'],'วิธีรับสินค้า');
@@ -124,8 +124,14 @@ export function createSupabaseApplication({url,publishableKey,origin='http://loc
     const sampleCompleteRoute=/^\/api\/orders\/([^/]+)\/complete-sample$/.exec(route);
     const deliveryRoute=/^\/api\/orders\/([^/]+)\/delivery$/.exec(route);
     const shipmentRoute=/^\/api\/orders\/([^/]+)\/shops\/([^/]+)\/ship$/.exec(route);
+    const auctionManagementRoute=/^\/api\/products\/([^/]+)\/auction\/(cancel|delete)$/.exec(route);
     const listingRoute=/^\/api\/products\/([^/]+)(\/withdraw)?$/.exec(route);
-    if(deliveryRoute){
+    if(auctionManagementRoute){
+     if(req.method!=='POST')fail(405,'วิธีทำรายการไม่ถูกต้อง');
+     if(!uuid.test(auctionManagementRoute[1]))fail(400,'รหัสสินค้าไม่ถูกต้อง');
+     const body=await read(req);if(Object.keys(body).length)fail(400,'ไม่ต้องส่งข้อมูลเพิ่มเติม');
+     action=auctionManagementRoute[2]==='cancel'?'auction_cancel':'auction_delete';payload={productId:auctionManagementRoute[1]};
+    }else if(deliveryRoute){
      if(req.method!=='POST')fail(405,'วิธีทำรายการไม่ถูกต้อง');
      if(!uuid.test(deliveryRoute[1]))fail(400,'รหัสคำสั่งซื้อไม่ถูกต้อง');
      const b=await read(req);if(Object.keys(b).some(k=>!['delivery','recipientName','phone','address'].includes(k)))fail(400,'ข้อมูลรับสินค้าไม่ถูกต้อง');

@@ -25,6 +25,8 @@ async function applyPayments(target) {
  await target.exec(await readFile(new URL('./admin-mfa-policy.sql',import.meta.url),'utf8'));
  await target.exec(await readFile(new URL('../migrations/202610230008_seller_delivery.sql',import.meta.url),'utf8'));
  await target.exec(await readFile(new URL('./seller-delivery.sql',import.meta.url),'utf8'));
+ await target.exec(await readFile(new URL('../migrations/202611010009_auction_management.sql',import.meta.url),'utf8'));
+ await target.exec(await readFile(new URL('./auction-management.sql',import.meta.url),'utf8'));
  await target.exec(await readFile(new URL('./admin-mfa-policy.sql',import.meta.url),'utf8'));
  await target.exec(await readFile(new URL('./sample-commerce.sql',import.meta.url),'utf8'));
  await target.exec(await readFile(new URL('./sample-auctions.sql',import.meta.url),'utf8'));
@@ -53,6 +55,7 @@ try {
   await legacy.exec(await readFile(new URL('./pickup-workflow.sql',import.meta.url),'utf8'));
   await applyPayments(legacy);
  } finally {await legacy.close();}
+ console.log('PASS: owner auction cancellation, soft deletion, bid history and winner order protection');
  console.log('PASS: seller profile facts, private shipping recipients, immutable shipment tracking and delivery receipt');
  console.log('PASS: administrator-only MFA exemption, database role authority and unchanged account/self-review protections');
  console.log('PASS: shared sample auction competition, deadline winner, private order, payment and repeat rounds');
