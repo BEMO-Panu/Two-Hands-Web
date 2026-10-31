@@ -6,6 +6,16 @@ const rpcReasons={
  'Administrator with MFA required':{reason:'admin_mfa_required',message:'กรุณายืนยันตัวตนผู้ดูแลด้วยรหัสผ่านและรหัส 2FA อีกครั้งก่อนตรวจรายการ'},
  'Shop owner must verify email':{reason:'shop_email_unverified',message:'เจ้าของร้านต้องยืนยันอีเมลก่อน จึงจะอนุมัติร้านได้'}
 };
+const authReasons={
+ email_not_confirmed:{reason:'email_not_confirmed',message:'บัญชีนี้ยังไม่ได้ยืนยันอีเมล กรุณาเปิดลิงก์ในอีเมลก่อนเข้าสู่ระบบ ไม่ต้องสมัครซ้ำ'},
+ invalid_credentials:{reason:'invalid_credentials',message:'อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบแล้วลองใหม่'},
+ over_email_send_rate_limit:{reason:'email_send_rate_limit',message:'บริการอีเมลยืนยันถึงโควตาแล้ว การกดซ้ำจะไม่ช่วย กรุณาติดต่อผู้ดูแลเพื่อตั้งค่าบริการอีเมลหรือวิธีสมัคร'},
+ over_request_rate_limit:{reason:'auth_rate_limit',message:'บริการเข้าสู่ระบบได้รับคำขอถี่เกินไป กรุณารอตามเวลาที่แจ้งก่อนลองใหม่'},
+ email_address_invalid:{reason:'invalid_email',message:'บริการสมาชิกไม่รับอีเมลนี้ กรุณาตรวจรูปแบบอีเมล'},
+ weak_password:{reason:'weak_password',message:'รหัสผ่านไม่ผ่านเงื่อนไขของระบบสมาชิก กรุณาใช้รหัสอย่างน้อย 8 ตัวอักษร'},
+ user_already_exists:{reason:'account_exists',message:'อีเมลนี้มีบัญชีแล้ว กรุณาเข้าสู่ระบบ หรือกดลืมรหัสผ่าน'},
+ signup_disabled:{reason:'signup_disabled',message:'ระบบปิดรับสมาชิกชั่วคราว กรุณาติดต่อผู้ดูแล'}
+};
 export class SupabaseError extends HttpError {
  constructor(status=503, code='upstream_error') { super(status, status===429?'ทำรายการบ่อยเกินไป กรุณาลองใหม่ภายหลัง':status===401?'กรุณาเข้าสู่ระบบหรือยืนยันรหัส 2FA อีกครั้ง':status===403?'คุณไม่มีสิทธิ์ทำรายการนี้':status===404?'ไม่พบข้อมูล':status===409?'สถานะรายการเปลี่ยนแปลง กรุณาอัปเดตข้อมูลแล้วลองใหม่':status===400?'ข้อมูลไม่ถูกต้อง หรือรายการนี้ไม่พร้อมใช้งาน':'ไม่สามารถเชื่อมต่อบริการข้อมูลได้ กรุณาลองใหม่');this.code=code; }
 }
@@ -17,9 +27,9 @@ export function createSupabaseClient({url,publishableKey,fetchImpl=fetch}) {
   const h={apikey:publishableKey,...headers};if(token)h.Authorization='Bearer '+token;
   if(body!==undefined&&!raw)h['Content-Type']='application/json';
   let response;try{response=await fetchImpl(url+route,{method,headers:h,body:body===undefined?undefined:raw?body:JSON.stringify(body),signal:AbortSignal.timeout(10000),redirect:'error'});}catch{throw new SupabaseError();}
-  if(!response.ok){let code='upstream_error',known;try{const data=await response.json();code=data.code||data.error_code||code;if(route==='/rest/v1/rpc/th_api'&&response.status===403&&code==='PT403')known=Object.hasOwn(rpcReasons,data.message)?rpcReasons[data.message]:undefined;}catch{}
+  if(!response.ok){let code='upstream_error',known;try{const data=await response.json();code=data.code||data.error_code||code;if(route.startsWith('/auth/v1/'))known=Object.hasOwn(authReasons,code)?authReasons[code]:undefined;if(route==='/rest/v1/rpc/th_api'&&response.status===403&&code==='PT403')known=Object.hasOwn(rpcReasons,data.message)?rpcReasons[data.message]:undefined;}catch{}
    const status=response.status===429?429:response.status===401?401:response.status===403?403:response.status===404?404:response.status===409?409:response.status>=500?503:code==='23505'||code==='40001'||code==='40P01'?409:400;
-   const error=new SupabaseError(status,code);if(known){error.message=known.message;error.reason=known.reason;}throw error;
+   const error=new SupabaseError(status,code);if(known){error.message=known.message;error.reason=known.reason;}const retry=response.headers.get('retry-after');if(status===429&&retry&&/^\d+$/.test(retry)){error.retryAfter=Math.min(86400,Math.max(1,Number(retry)));if(code!=='over_email_send_rate_limit')error.message+=` (ลองอีกครั้งใน ${error.retryAfter} วินาที)`;}throw error;
   }
   if(raw)return response;
   if(response.status===204)return {};

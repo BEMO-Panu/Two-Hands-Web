@@ -34,7 +34,7 @@ export function createSupabaseApplication({url,publishableKey,origin='http://loc
  async function sessionUser(s){if(!s.access)return {s,user:null};try{if(s.expires<=clock()+30000)s=await refresh(s);const user=await sb.auth('/user','GET',undefined,s.access);if(!user?.id)throw new SupabaseError(401);return {s,user};}catch(e){if(e.status===401||e.status===400)return {s:fresh(),user:null};throw e;}}
  async function enforceMfa(s,code){const user=await sb.auth('/user','GET',undefined,s.access);const factor=user.factors?.find(f=>f.factor_type==='totp'&&f.status==='verified');if(factor){if(user.email_confirmed_at){try{const policy=await sb.rpc('auth_policy',{},s.access);if(policy?.isAdmin===true&&policy.adminMfaRequired===false)return s;}catch{/* Older databases and policy failures retain the existing MFA requirement. */}}if(!/^\d{6}$/.test(code||''))fail(401,'กรุณาใส่รหัส 2FA 6 หลักจากแอปยืนยันตัวตน');const challenge=await sb.auth(`/factors/${factor.id}/challenge`,'POST',{},s.access);const result=await sb.auth(`/factors/${factor.id}/verify`,'POST',{challenge_id:challenge.id,code},s.access);s=tokens(s,result,{renew:true});}return s;}
  function loginPassword(value){if(typeof value!=='string'||!value.length||value.length>128||Buffer.byteLength(value)>512)fail(400,'รหัสผ่านไม่ถูกต้อง');return value;}
- function limit(key,count,ms){const now=clock();let b=limits.get(key);if(!b||b.end<=now){if(limits.size>=10000){for(const [k,v] of limits)if(v.end<=now)limits.delete(k);if(limits.size>=10000)fail(503,'เซิร์ฟเวอร์กำลังมีงานมาก');}b={n:0,end:now+ms};limits.set(key,b);}if(++b.n>count)fail(429,'ทำรายการบ่อยเกินไป กรุณาลองใหม่ภายหลัง');}
+ function limit(key,count,ms){const now=clock();let b=limits.get(key);if(!b||b.end<=now){if(limits.size>=10000){for(const [k,v] of limits)if(v.end<=now)limits.delete(k);if(limits.size>=10000)fail(503,'เซิร์ฟเวอร์กำลังมีงานมาก');}b={n:0,end:now+ms};limits.set(key,b);}if(++b.n>count){const retryAfter=Math.max(1,Math.ceil((b.end-now)/1000)),error=new HttpError(429,`ลองทำรายการนี้บ่อยเกินไป กรุณารอ ${retryAfter} วินาทีแล้วลองใหม่`);error.reason='local_rate_limit';error.retryAfter=retryAfter;throw error;}}
  const empty={products:[],stores:[],profile:{},verification:{status:'none'},bids:{},favorites:[],cart:[],orders:[]};
  const extras=s=>({provider:'supabase',capabilities:{payments:false,shipping:false,mfa:true,pickupWorkflow:false,presentationDemo:!!presentationHandler},production,csrf:s.csrf,categories,images,serverTime:clock(),recoveryRequired:!!s.recovery});
  async function state(s,user){const data=await sb.rpc('snapshot',{},s.recovery?undefined:s.access);return {...empty,...data,...extras(s),capabilities:{...extras(s).capabilities,pickupWorkflow:data.pickupWorkflow===true,orderPayments:data.orderPayments===true,sampleCommerce:data.sampleCommerce===true,sampleAuctions:data.sampleAuctions===true,adminMfaRequired:data.adminMfaRequired!==false,shipping:data.shipping===true,sellerProfiles:data.sellerProfiles===true},serverTime:Number.isFinite(Number(data.serverTime))?Number(data.serverTime):clock(),user:user&&!s.recovery?{id:user.id,email:user.email,name:data.user?.name||user.user_metadata?.name||'สมาชิก',role:data.user?.role||'user',emailVerified:!!user.email_confirmed_at,mfaEnabled:!!user.factors?.some(f=>f.factor_type==='totp'&&f.status==='verified')}:null};}
@@ -76,13 +76,13 @@ export function createSupabaseApplication({url,publishableKey,origin='http://loc
     const respond=(data,status=200)=>{save(res,s);return json(res,data,status);};
     if(route==='/api/state'&&req.method==='GET')return respond(await state(s,user));
     if(route.startsWith('/api/auth/')){
-     if(!isWrite)fail(405,'Method not allowed');const b=await read(req);limit('auth:'+ip,20,15*60000);
+     if(!isWrite)fail(405,'Method not allowed');const b=await read(req);const authAction=route.slice('/api/auth/'.length);limit('auth:'+authAction+':'+ip,100,15*60000);if(['login','register','reauth'].includes(authAction)){const identity=createHash('sha256').update(String(b.email||user?.email||'').trim().toLowerCase()).digest('hex');limit('auth-account:'+authAction+':'+identity,20,15*60000);}
      if(route==='/api/auth/register'){
       const mail=email(b.email),name=string(b.name,'ชื่อ',{max:60}),pw=password(b.password);
       const result=await sb.auth('/signup','POST',{email:mail,password:pw,data:{name}});
-      // Email confirmation is mandatory. Discard any automatic sign-in tokens.
+      // Email confirmation remains mandatory. Discard automatic sign-in tokens.
       if(result.access_token){try{await sb.auth('/logout?scope=local','POST',{},result.access_token);}catch{}fail(503,'กรุณาเปิด Confirm email ใน Supabase ก่อนเปิดรับสมาชิก');}
-      return respond({message:'หากสมัครด้วยอีเมลนี้ได้ ระบบจะส่งลิงก์ยืนยัน กรุณาตรวจอีเมล'},202);
+      return respond({requiresEmailConfirmation:true,message:'ส่งคำขอสมัครแล้ว หากอีเมลนี้สมัครได้ กรุณาเปิดลิงก์ยืนยันในอีเมลก่อนเข้าสู่ระบบ ไม่ต้องสมัครซ้ำ หากมีบัญชีแล้วให้เข้าสู่ระบบหรือกดลืมรหัสผ่าน'},202);
      }
      if(route==='/api/auth/login'){
       const result=await sb.auth('/token?grant_type=password','POST',{email:email(b.email),password:loginPassword(b.password)});
@@ -217,7 +217,7 @@ export function createSupabaseApplication({url,publishableKey,origin='http://loc
    }
    if(!['GET','HEAD'].includes(req.method))fail(405,'Method not allowed');
    const base=path.join(root,'dist'),filename=path.resolve(base,'.'+decodeURIComponent(route==='/'?'/index.html':route));if(!filename.startsWith(base+path.sep))fail(403,'Forbidden');const bytes=await readFile(filename);res.writeHead(200,{'Content-Type':mime[path.extname(filename)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(req.method==='HEAD'?undefined:bytes);
-  }catch(e){if(res.headersSent)return res.end();if(e instanceof HttpError)return json(res,{error:e.message,...(e.reason?{reason:e.reason}:{})},e.status);if(e.code==='ENOENT')return json(res,{error:'ไม่พบไฟล์'},404);console.error('[supabase]',e.name);json(res,{error:'เกิดข้อผิดพลาดภายใน กรุณาลองใหม่'},500);}
+  }catch(e){if(res.headersSent)return res.end();if(e instanceof HttpError){if(e.retryAfter)res.setHeader('Retry-After',String(e.retryAfter));return json(res,{error:e.message,...(e.reason?{reason:e.reason}:{}),...(e.retryAfter?{retryAfter:e.retryAfter}:{})},e.status);}if(e.code==='ENOENT')return json(res,{error:'ไม่พบไฟล์'},404);console.error('[supabase]',e.name);json(res,{error:'เกิดข้อผิดพลาดภายใน กรุณาลองใหม่'},500);}
  });
  return {server,close:()=>new Promise(resolve=>{server.close(resolve);server.closeIdleConnections();})};
 }
