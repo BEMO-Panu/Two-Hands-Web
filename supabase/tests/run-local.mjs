@@ -29,6 +29,8 @@ async function applyPayments(target) {
  await target.exec(await readFile(new URL('./auction-management.sql',import.meta.url),'utf8'));
  await target.exec(await readFile(new URL('../migrations/202611010010_listing_delete.sql',import.meta.url),'utf8'));
  await target.exec(await readFile(new URL('./listing-delete.sql',import.meta.url),'utf8'));
+ await target.exec(await readFile(new URL('../migrations/202611070011_product_reviews.sql',import.meta.url),'utf8'));
+ await target.exec(await readFile(new URL('./product-reviews.sql',import.meta.url),'utf8'));
  await target.exec(await readFile(new URL('./admin-mfa-policy.sql',import.meta.url),'utf8'));
  await target.exec(await readFile(new URL('./sample-commerce.sql',import.meta.url),'utf8'));
  await target.exec(await readFile(new URL('./sample-auctions.sql',import.meta.url),'utf8'));

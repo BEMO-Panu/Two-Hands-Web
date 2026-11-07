@@ -2,6 +2,8 @@
 import { HttpError } from './security.js';
 // Only exact, known business errors are translated; arbitrary upstream text stays private.
 const rpcReasons={
+ 'Completed purchase required for review':{reason:'review_purchase_required',message:'รีวิวได้หลังยืนยันรับสินค้าจากคำสั่งซื้อของคุณแล้วเท่านั้น'},
+ 'Product already reviewed':{reason:'review_exists',message:'คุณรีวิวสินค้านี้ในคำสั่งซื้อนี้แล้ว'},
  'Own listing not found':{reason:'listing_owner_required',message:'ไม่พบประกาศของคุณ'},
  'Listing already has an order':{reason:'listing_has_order',message:'สินค้านี้มีคำสั่งซื้อแล้ว จึงลบประกาศไม่ได้ กรุณาจัดการผ่านรายการขาย'},
  'Own auction not found':{reason:'auction_owner_required',message:'ไม่พบประกาศประมูลของคุณ'},
